@@ -13,17 +13,20 @@ import six
 from django.utils import timezone
 from django.utils.functional import cached_property
 
+from sentry.api.event_search import InvalidSearchQuery
 from sentry.incidents.events import (
     IncidentCommentCreatedEvent,
     IncidentCreatedEvent,
     IncidentStatusUpdatedEvent,
 )
 from sentry.incidents.logic import (
+    create_alert_rule,
     create_event_stat_snapshot,
     create_incident,
     create_incident_activity,
     create_incident_snapshot,
     create_initial_event_stats_snapshot,
+    DEFAULT_ALERT_RULE_RESOLUTION,
     bulk_build_incident_query_params,
     bulk_get_incident_aggregates,
     bulk_get_incident_event_stats,
@@ -38,6 +41,9 @@ from sentry.incidents.logic import (
     update_incident_status,
 )
 from sentry.incidents.models import (
+    AlertRuleAggregations,
+    AlertRuleStatus,
+    AlertRuleThresholdType,
     Incident,
     IncidentActivity,
     IncidentActivityType,
@@ -48,6 +54,7 @@ from sentry.incidents.models import (
     IncidentSubscription,
     IncidentSuspectCommit,
     IncidentType,
+    SnubaDatasets,
 )
 from sentry.models.commit import Commit
 from sentry.models.repository import Repository
@@ -764,3 +771,49 @@ class BulkGetIncidentStatusTest(TestCase, BaseIncidentsTest):
             aggregates = get_incident_aggregates(incident)
             assert incident_stats['total_events'] == aggregates['count']
             assert incident_stats['unique_users'] == aggregates['unique_users']
+
+
+class CreateAlertRuleTest(TestCase, BaseIncidentsTest):
+    def test(self):
+        threshold_type = AlertRuleThresholdType.ABOVE
+        query = 'level:error'
+        aggregations = [AlertRuleAggregations.TOTAL]
+        time_window = 10
+        alert_threshold = 1000
+        resolve_threshold = 400
+        threshold_period = 1
+        alert_rule = create_alert_rule(
+            self.project,
+            threshold_type,
+            query,
+            aggregations,
+            time_window,
+            alert_threshold,
+            resolve_threshold,
+            threshold_period,
+        )
+        assert alert_rule.project == self.project
+        assert alert_rule.status == AlertRuleStatus.PENDING.value
+        assert alert_rule.subscription_id is not None
+        assert alert_rule.threshold_type == threshold_type.value
+        assert alert_rule.dataset == SnubaDatasets.EVENTS
+        assert alert_rule.query == query
+        assert alert_rule.aggregations == [agg.value for agg in aggregations]
+        assert alert_rule.time_window == time_window
+        assert alert_rule.resolution == DEFAULT_ALERT_RULE_RESOLUTION
+        assert alert_rule.alert_threshold == alert_threshold
+        assert alert_rule.resolve_threshold == resolve_threshold
+        assert alert_rule.threshold_period == threshold_period
+
+    def test_invalid_query(self):
+        with self.assertRaises(InvalidSearchQuery):
+            create_alert_rule(
+                self.project,
+                AlertRuleThresholdType.ABOVE,
+                'has:',
+                [],
+                1,
+                1,
+                1,
+                1,
+            )
