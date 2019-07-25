@@ -30,7 +30,7 @@ mail.backend: '%(mail.backend)s'  # Use dummy if you want to disable email entir
 # System Settings #
 ###################
 
-# If this file ever becomes compromised, it's important to regenerate your a new key
+# If this file ever becomes compromised, it's important to regenerate a new key
 # Changing this value will result in all current sessions being invalidated.
 # A new key can be generated with `$ sentry config generate-secret-key`
 system.secret-key: '%(secret_key)s'
